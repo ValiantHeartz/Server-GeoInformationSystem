@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+    
+    <meta name="viewport" content="initial-scale=1, maximum-scale=1,user-scalable=no">
+    <title>Class Breaks Renderer</title>
+
+	<link rel="stylesheet" href="http://192.168.101.103:8080/arcgis_js_api/library/3.20/3.20/dijit/themes/claro/claro.css">
+    <link rel="stylesheet" href="http://192.168.101.103:8080/arcgis_js_api/library/3.20/3.20/esri/css/esri.css">
+    <script src="http://192.168.101.103:8080/arcgis_js_api/library/3.20/3.20/init.js"></script>
+    <style>
+      html, body, #map{
+        height: 100%;
+        margin: 0;
+        padding: 0;
+      }
+    </style>
+    <script>
+      var map;
+      require([
+        "esri/map", "esri/layers/FeatureLayer", "esri/InfoTemplate",
+        "esri/symbols/SimpleLineSymbol", "esri/symbols/SimpleFillSymbol",
+		"esri/geometry/Extent",
+		"esri/layers/ArcGISDynamicMapServiceLayer",
+		"esri/layers/ImageParameters",
+        "esri/renderers/ClassBreaksRenderer",
+		"esri/Color",
+        "dojo/domReady!"
+      ], function(
+        Map, FeatureLayer, InfoTemplate,
+        SimpleLineSymbol, SimpleFillSymbol,
+		Extent,
+		ArcGISDynamicMapServiceLayer, 
+		ImageParameters,
+        ClassBreaksRenderer, Color
+      ) {
+          var bounds = new Extent({
+            "xmin":1.1529320488986155E7,
+            "ymin":2821289.5764818615,
+            "xmax":1.2206117683469873E7,
+            "ymax":3407336.8518452714,
+            "spatialReference":{"wkid":102113}
+          });
+		  
+          map = new Map("map", {
+            extent: bounds
+          });	  
+	  
+        var symbol = new SimpleFillSymbol();
+        symbol.setColor(new Color([150, 150, 150, 0.5]));
+
+        // Add five breaks to the renderer.
+        // If you have ESRI's ArcMap available, this can be a good way to determine break values.
+        // You can also copy the RGB values from the color schemes ArcMap applies, or use colors
+        // from a site like www.colorbrewer.org
+        //
+        // alternatively, ArcGIS Server's generate renderer task could be used
+		
+        var renderer = new ClassBreaksRenderer(symbol, "KZMJ");
+        renderer.addBreak(7308.750000, 3473910.330000, new SimpleFillSymbol().setColor(new Color([56, 168, 0, 0.5])));
+        renderer.addBreak(3473910.330001, 8902652.120000, new SimpleFillSymbol().setColor(new Color([139, 209, 0, 0.5])));
+		renderer.addBreak(8902652.120001, 15064389.540000, new SimpleFillSymbol().setColor(new Color([255, 255, 0, 0.5])));
+        renderer.addBreak(15064389.540001, 27671696.720000, new SimpleFillSymbol().setColor(new Color([255, 128, 0, 0.5])));
+        renderer.addBreak(27671696.720001, 44212866.160000, new SimpleFillSymbol().setColor(new Color([255, 0, 0, 0.5])));
+		
+        //var infoTemplate = new InfoTemplate("${XZQMC}", "${*}");
+		var infoTemplate = new InfoTemplate("行政区划ID", "行政区划: ${OBJECTID}");
+        var featureLayer = new FeatureLayer("http://192.168.101.103:6080/arcgis/rest/services/gzqxsimpfeature/FeatureServer/0", {
+          mode: FeatureLayer.MODE_SNAPSHOT,
+          outFields: ["*"],
+          infoTemplate: infoTemplate
+        });
+        featureLayer.setRenderer(renderer);
+        map.addLayer(featureLayer);
+
+      });
+    </script>
+  </head>
+  
+  <body>
+    <div id="map"></div>
+  </body>
+
+</html>

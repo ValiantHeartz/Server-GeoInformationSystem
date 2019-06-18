@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+    
+    <meta name="viewport" content="initial-scale=1, maximum-scale=1,user-scalable=no">
+    <title>QueryTask with geometry, results as an InfoWindow</title>
+	<link rel="stylesheet" href="http://192.168.101.103:8080/arcgis_js_api/library/3.20/3.20/dijit/themes/claro/claro.css">
+    <link rel="stylesheet" href="http://192.168.101.103:8080/arcgis_js_api/library/3.20/3.20/esri/css/esri.css">
+    <script src="http://192.168.101.103:8080/arcgis_js_api/library/3.20/3.20/init.js"></script>
+    <script>
+      dojo.require("esri.map");
+      dojo.require("esri.tasks.query");
+      dojo.require("esri.tasks.Geoprocessor");
+	  dojo.require("esri.geometry.Circle");
+	  dojo.require("esri.tasks.FeatureSet");
+	  dojo.require("esri.symbols.SimpleFillSymbol");
+	  dojo.require("esri.symbols.SimpleLineSymbol");
+	  dojo.require("esri.Color");
+      var map, queryTask, query;
+      var symbol, infoTemplate;
+      var featureSet;
+      var geoprocessor, geometries, baseGraphics;
+      function init() {
+        map = new esri.Map("mapDiv");
+
+		//var imageParameters = new ImageParameters();
+        //imageParameters.format = "jpeg"; //set the image type to PNG24, note default is PNG8.
+
+        //Takes a URL to a non cached map service.
+        var dynamicMapServiceLayer = new esri.layers.ArcGISDynamicMapServiceLayer("http://192.168.101.103:6080/arcgis/rest/services/road/MapServer", {
+          "opacity" : 0.5
+		  //,
+         // "imageParameters" : imageParameters
+        });
+
+        map.addLayer(dynamicMapServiceLayer);
+
+		  
+        //create and add new layer
+       // var dynamicLayer = new esri.layers.ArcGISDynamicMapServiceLayer("https://sampleserver1.arcgisonline.com/ArcGIS/rest/services/Petroleum/KGS_OilGasFields_Kansas/MapServer");
+        //map.addLayer(dynamicLayer);
+
+        //Listen for click event on the map, when the user clicks on the map call executeQueryTask function.
+        dojo.connect(map, "onClick", executeQueryTask);
+
+		geoprocessor = new esri.tasks.Geoprocessor("http://192.168.101.103:6080/arcgis/rest/services/daolubuffer8/GPServer/daolubuffer8");
+        geoprocessor.setOutSpatialReference({
+          wkid:  2380
+        });
+		
+        //build query task
+        queryTask = new esri.tasks.QueryTask("http://192.168.101.103:6080/arcgis/rest/services/road/MapServer/0");
+
+        //Can listen for onComplete event to process results or can use the callback option in the queryTask.execute method.
+        //dojo.connect(queryTask, "onComplete", showResults);
+        geoprocessor.on("execute-complete", displayResults);
+        //build query filter
+        query = new esri.tasks.Query();
+        query.outSpatialReference = {"wkid":  2380};
+        query.returnGeometry = true;
+        query.outFields = ["*"];
+
+        //create the infoTemplate to be used in the infoWindow.
+        //All ${attributeName} will be substituted with the attribute value for current feature.
+        infoTemplate = new esri.InfoTemplate("${类型}");
+
+        symbol = new esri.symbol.SimpleFillSymbol(esri.symbol.SimpleFillSymbol.STYLE_SOLID, new esri.symbol.SimpleLineSymbol(esri.symbol.SimpleLineSymbol.STYLE_SOLID, new dojo.Color([255,0,0]), 2), new dojo.Color([255,255,0,0.5]));
+      }
+
+      function executeQueryTask(evt) {
+        //map.infoWindow.hide();
+        map.graphics.clear();
+        var circleGeometry = new esri.geometry.Circle(evt.mapPoint,{
+            "radius": 20
+        });
+        //onClick event returns the evt point where the user clicked on the map.
+        //This is contains the mapPoint (esri.geometry.point) and the screenPoint (pixel xy where the user clicked).
+        //set query geometry = to evt.mapPoint Geometry
+        //query.geometry = evt.mapPoint;
+        query.geometry = circleGeometry;
+        //Execute task and call showResults on completion
+        queryTask.execute(query, function(fset) {
+          if (fset.features.length === 1) {
+            showFeature(fset.features[0],evt);
+          } else if (fset.features.length !== 0) {
+            showFeatureSet(fset,evt);
+          }
+        });
+      }
+
+      function showFeature(feature,evt) {
+        map.graphics.clear();
+		var linesymbol1 = new  esri.symbol.SimpleLineSymbol(esri.symbol.SimpleLineSymbol.STYLE_SOLID, new esri.Color([200, 0, 0, 0.5]), 1)
+        feature.setSymbol(linesymbol1);
+        feature.setInfoTemplate(infoTemplate);
+        map.graphics.add(feature);
+		//map.infoWindow.hide();
+		var content = "";
+		var graphic = feature;
+		content = graphic.getContent();
+		//content = feature.attributes.类型;
+		map.infoWindow.setContent(content);
+		map.infoWindow.show(evt.screenPoint);
+		getDriveTimePolygon(graphic);
+      }
+
+      function showFeatureSet(fset,evt) {
+        //remove all graphics on the maps graphics layer
+        map.graphics.clear();
+        featureSet = fset;
+        var numFeatures = featureSet.features.length;
+        //QueryTask returns a featureSet.  Loop through features in the featureSet and add them to the infowindow.
+        var content = "";
+        for (var i=0; i<numFeatures; i++) {
+          var graphic = featureSet.features[i];
+          content = content + graphic.attributes.FIELD_NAME + " Field (<A href='#' onclick='showFeature(featureSet.features[" + i + "]);'>show</A>)<br/>";
+        }
+        map.infoWindow.setContent(content);
+        map.infoWindow.show(evt.screenPoint);
+      }
+	  
+	  function getDriveTimePolygon(graphic) {
+          // the graphic representing the selected location is passed onto the GP Task
+          var featureSet = new esri.tasks.FeatureSet();
+          featureSet.features = [graphic];
+
+          var params = {
+            "shengdao": featureSet,
+            "distpara": 70
+          };
+          //geoprocessor.execute(params);
+		  geoprocessor.submitJob(params,function(result){
+	               var jobId = result.jobId;
+            var status = result.jobStatus;
+            if(status == esri.tasks.JobInfo.STATUS_SUCCEEDED) {
+                //成功之后，将其中的结果取出来，当然这也是参数名字。
+                //在模型中，想要取出中间结果，需要设置为模型参数
+                geoprocessor.getResultData(jobId, "outbuf", function(jobInfo){
+        var features = jobInfo.value.features;
+        // add drive time polygons to the map
+        for (var f = 0, fl = features.length; f < fl; f++) {
+          var feature = features[f];
+          if (f === 0) {
+            var polySymbolRed = new esri.symbol.SimpleFillSymbol();
+            polySymbolRed.setOutline(new  esri.symbol.SimpleLineSymbol(esri.symbol.SimpleLineSymbol.STYLE_SOLID, new esri.Color([0, 0, 0, 0.5]), 1));
+            polySymbolRed.setColor(new esri.Color([255, 0, 0, 0.7]));
+            feature.setSymbol(polySymbolRed);
+          }
+          else if (f == 1) {
+            var polySymbolGreen = new esri.symbol.SimpleFillSymbol();
+            polySymbolGreen.setOutline(new esri.symbol.SimpleLineSymbol(esri.symbol.SimpleLineSymbol.STYLE_SOLID,
+                new esri.Color([0, 0, 0, 0.5]), 1));
+            polySymbolGreen.setColor(new esri.Color([0, 255, 0, 0.7]));
+            feature.setSymbol(polySymbolGreen);
+          }
+          else if (f == 2) {
+            var polySymbolBlue = new esri.symbol.SimpleFillSymbol();
+            polySymbolBlue.setOutline(new esri.symbol.SimpleLineSymbol(esri.symbol.SimpleLineSymbol.STYLE_SOLID, new esri.Color([0, 0, 0, 0.5]), 1));
+            polySymbolBlue.setColor(new esri.Color([0, 0, 255, 0.7]));
+            feature.setSymbol(polySymbolBlue);
+          }
+          map.graphics.add(feature);
+        }
+        // get the extent for the drive time polygon graphics and
+        // zoom to the extent of the drive time polygons
+        map.setExtent(graphicsUtils.graphicsExtent(map.graphics.graphics), true);		  
+		  });
+		   };
+		  		  });
+		  //geoprocessor.execute(params, getDriveTimePolys);
+
+        }
+		
+		
+	   function displayResults(evtObj) {
+	   var results = evtObj.results;
+        var features = results[0].value.features;
+        // add drive time polygons to the map
+        for (var f = 0, fl = features.length; f < fl; f++) {
+          var feature = features[f];
+          if (f === 0) {
+            var polySymbolRed = new SimpleFillSymbol();
+            polySymbolRed.setOutline(new SimpleLineSymbol(SimpleLineSymbol.STYLE_SOLID, new Color([0, 0, 0, 0.5]), 1));
+            polySymbolRed.setColor(new Color([255, 0, 0, 0.7]));
+            feature.setSymbol(polySymbolRed);
+          }
+          else if (f == 1) {
+            var polySymbolGreen = new SimpleFillSymbol();
+            polySymbolGreen.setOutline(new SimpleLineSymbol(SimpleLineSymbol.STYLE_SOLID,
+                new Color([0, 0, 0, 0.5]), 1));
+            polySymbolGreen.setColor(new Color([0, 255, 0, 0.7]));
+            feature.setSymbol(polySymbolGreen);
+          }
+          else if (f == 2) {
+            var polySymbolBlue = new SimpleFillSymbol();
+            polySymbolBlue.setOutline(new SimpleLineSymbol(SimpleLineSymbol.STYLE_SOLID, new Color([0, 0, 0, 0.5]), 1));
+            polySymbolBlue.setColor(new Color([0, 0, 255, 0.7]));
+            feature.setSymbol(polySymbolBlue);
+          }
+          map.graphics.add(feature);
+        }
+        // get the extent for the drive time polygon graphics and
+        // zoom to the extent of the drive time polygons
+        map.setExtent(graphicsUtils.graphicsExtent(map.graphics.graphics), true);
+      }
+	  
+
+      dojo.ready(init);
+    </script>
+  </head>
+  <body class="claro">
+    Click on a Petroleum Field to get more info.  When field is highlighted, click field again to get infoWindow.
+    <div id="mapDiv" style="width:800px; height:600px; border:1px solid #000;"></div>
+  </body>
+</html>
